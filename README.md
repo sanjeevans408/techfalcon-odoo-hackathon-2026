@@ -1,74 +1,93 @@
 # AssetFlow
 
-AssetFlow is a React and Vite asset-management dashboard backed by an Express API and SQLite. It supports organization records, assets, allocation and transfers, bookings, maintenance, audits, notifications, activity logs, and user accounts.
+AssetFlow is an asset-management ERP built with React, Vite, Express, and SQLite. It manages assets, users, allocations, transfers, bookings, maintenance, audits, notifications, activity logs, and an optional AI assistant.
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 18 or later
 - npm
 
-## Setup
+## Install
 
-Install the frontend dependencies:
+Install both frontend and backend dependencies from the project root:
 
 ```powershell
-npm.cmd install
+npm.cmd run install:all
 ```
 
-Install the backend dependencies and create the SQLite schema plus sample data:
+Create the SQLite schema and seed sample records:
 
 ```powershell
 cd backend
-npm.cmd install
 npm.cmd run seed
 cd ..
 ```
 
-## Run the project
+## Configure environment variables
 
-Start the frontend and API together (this is required for login and signup):
+Create `backend/.env` if you want to use the AI assistant:
 
-```powershell
-npm.cmd run dev:full
+```env
+NVIDIA_API_KEY=your_nvidia_nim_key
+PORT=5000
 ```
 
-`npm.cmd run dev` starts the same two services.
+`NVIDIA_API_KEY` is optional. The rest of the application works without it. Never commit API keys; `backend/.env` is ignored by Git.
 
-Open the Vite URL shown in the terminal (normally `http://localhost:5173`). The API runs on `http://localhost:5000`.
+## Run locally
 
-## Demo account
+Start the React frontend and Express API together:
 
-Use one of the listed demo users, then press **Log in**:
+```powershell
+npm.cmd run dev
+```
 
-- Email: `admin@assetflow.io`
-- Password: `password`
+The frontend is normally available at `http://localhost:5173`, and the API runs at `http://localhost:5000`.
 
-The other seeded accounts use the same password.
+## Demo login
 
-## Data persistence
+Use any seeded account with password `password`.
 
-SQLite data is stored in `backend/assetflow.db`.
+| Role | Email |
+| --- | --- |
+| Admin | `admin@assetflow.io` |
+| Asset Manager | `priya@assetflow.io` |
+| Department Head | `raj@assetflow.io` |
+| Employee | `ananya@assetflow.io` |
 
-- Core entity routes are available under `/api` (`assets`, `users`, `bookings`, `maintenance`, `transfers`, `audits`, and `notifications`).
-- The React dashboard persists its complete UI data model through `GET` and `PUT /api/state`, so all screen changes remain after a refresh or backend restart.
-- New user accounts are created through `/api/auth/signup` and are stored in the `users` table with a hashed password.
+New accounts are created through the signup form and stored in SQLite with bcrypt-hashed passwords.
 
-## Test commands
+## Persistence and API
+
+The SQLite database is stored at `backend/assetflow.db`.
+
+- UI data is loaded and saved through `GET` / `PUT` `/api/state`.
+- Authentication uses `/api/auth/login` and `/api/auth/signup`.
+- Entity APIs are available for users, assets, bookings, maintenance, transfers, audits, and notifications.
+- The AI assistant endpoint is `POST /api/ai/chat`; it reads a live database summary before calling NVIDIA NIM.
+- Check service availability at `GET /api/health`.
+
+## Verify the project
 
 ```powershell
 npm.cmd run lint
 npm.cmd run build
-cd backend
-npm.cmd run seed
 ```
 
-To verify the API after starting it, visit `http://localhost:5000/api/health`.
+To verify the backend independently:
+
+```powershell
+cd backend
+npm.cmd run start
+```
+
+Then open `http://localhost:5000/api/health` in a browser.
 
 ## Project structure
 
 ```text
-src/                 React UI and API client
-backend/routes/      Express endpoints
-backend/models/      SQLite schema and connection helper
-backend/assetflow.db SQLite database file
+src/                 React application and API client
+backend/models/      SQLite connection and schema
+backend/routes/      Express API routes, including AI chat
+backend/assetflow.db SQLite database (created after seeding/running)
 ```
