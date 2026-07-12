@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
+import { assetsAPI, authAPI, stateAPI } from "./api/client";
 import {
   LayoutDashboard, Building2, Boxes, ArrowRightLeft, CalendarClock, Wrench,
   ShieldCheck, BarChart3, Bell, LogOut, Plus, Search, X, Check, ChevronRight,
@@ -232,6 +235,25 @@ export default function AssetFlowApp() {
   const [screen, setScreen] = useState("dashboard");
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [toast, setToast] = useState(null);
+  const stateLoaded = useRef(false);
+
+  useEffect(() => {
+    stateAPI.get().then((saved) => {
+      if (saved) {
+        setUsers(saved.users || []); setDepartments(saved.departments || []); setCategories(saved.categories || []);
+        setAssets(saved.assets || []); setTransferRequests(saved.transferRequests || []); setBookings(saved.bookings || []);
+        setMaintenance(saved.maintenance || []); setAudits(saved.audits || []); setNotifications(saved.notifications || []);
+        setLogs(saved.logs || []); setNextAssetNum(saved.nextAssetNum || 1);
+      }
+    }).catch((error) => console.error("Unable to load SQLite application state:", error))
+      .finally(() => { stateLoaded.current = true; });
+  }, []);
+
+  useEffect(() => {
+    if (!stateLoaded.current) return;
+    const timer = setTimeout(() => stateAPI.save({ users, departments, categories, assets, transferRequests, bookings, maintenance, audits, notifications, logs, nextAssetNum }).catch((error) => console.error("Unable to save SQLite application state:", error)), 250);
+    return () => clearTimeout(timer);
+  }, [users, departments, categories, assets, transferRequests, bookings, maintenance, audits, notifications, logs, nextAssetNum]);
 
   const currentUser = users.find((u) => u.id === currentUserId) || null;
 
@@ -400,22 +422,32 @@ function LoginScreen({ users, setUsers, departments, onLogin }) {
   const [error, setError] = useState("");
   const [forgot, setForgot] = useState(false);
 
-  const doLogin = () => {
-    const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
-    if (!u) return setError("No account found with that email.");
-    if (u.status === "Inactive") return setError("This account has been deactivated. Contact your Admin.");
+  const doLogin = async () => {
     if (!password) return setError("Enter your password.");
-    setError("");
-    onLogin(u.id);
+    try {
+      const { user } = await authAPI.login(email.trim(), password);
+      const localUser = { ...user, department: user.department };
+      setUsers((previous) => previous.some((item) => item.id === user.id)
+        ? previous.map((item) => item.id === user.id ? { ...item, ...localUser } : item)
+        : [...previous, { ...localUser, status: "Active" }]);
+      setError("");
+      onLogin(user.id);
+    } catch (error) {
+      setError(error.message || "Unable to log in.");
+    }
   };
 
-  const doSignup = () => {
+  const doSignup = async () => {
     if (!name.trim() || !email.trim() || !password) return setError("Fill in all fields to continue.");
-    if (users.some((x) => x.email.toLowerCase() === email.trim().toLowerCase())) return setError("An account with that email already exists.");
-    const newUser = { id: uid("emp"), name: name.trim(), email: email.trim(), department: dept, role: "Employee", status: "Active" };
-    setUsers((p) => [...p, newUser]);
-    setError("");
-    onLogin(newUser.id);
+    try {
+      const { user } = await authAPI.signup(name.trim(), email.trim(), password, dept);
+      const newUser = { ...user, department: user.department, status: "Active" };
+      setUsers((previous) => [...previous, newUser]);
+      setError("");
+      onLogin(newUser.id);
+    } catch (error) {
+      setError(error.message || "Unable to create the account.");
+    }
   };
 
   return (
@@ -477,7 +509,7 @@ function LoginScreen({ users, setUsers, departments, onLogin }) {
           <div className="text-[11px] text-slate-600 uppercase tracking-wide mb-2 text-center">Quick demo login</div>
           <div className="grid grid-cols-2 gap-2">
             {users.filter((u) => ["emp-1", "emp-2", "emp-3", "emp-4"].includes(u.id)).map((u) => (
-              <button key={u.id} onClick={() => onLogin(u.id)} className="bg-slate-900 border border-slate-800 hover:border-orange-500/50 rounded-md px-3 py-2 text-left">
+              <button key={u.id} onClick={() => { setEmail(u.email); setPassword("password"); setMode("login"); }} className="bg-slate-900 border border-slate-800 hover:border-orange-500/50 rounded-md px-3 py-2 text-left">
                 <div className="text-xs font-semibold text-slate-200">{u.role}</div>
                 <div className="text-[11px] text-slate-500 truncate">{u.name}</div>
               </button>
@@ -793,11 +825,29 @@ function RegisterAssetModal(props, ) {
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim() || !form.serial.trim() || !form.location.trim()) return;
     const tag = `AF-${String(nextAssetNum).padStart(4, "0")}`;
+    let savedAsset;
+    try {
+      savedAsset = await assetsAPI.create({
+        tag,
+        name: form.name.trim(),
+        category_id: form.category,
+        serial: form.serial.trim(),
+        acquisition_date: form.acquisitionDate,
+        cost: Number(form.cost) || 0,
+        condition: form.condition,
+        location: form.location.trim(),
+        shared: form.shared,
+      });
+    } catch (error) {
+      console.error("Unable to save asset:", error);
+      alert(error.message || "Unable to save the asset to SQLite.");
+      return;
+    }
     setAssets((prev) => [...prev, {
-      id: uid("ast"), tag, name: form.name.trim(), category: form.category, serial: form.serial.trim(),
+      id: savedAsset.id, tag, name: form.name.trim(), category: form.category, serial: form.serial.trim(),
       acquisitionDate: form.acquisitionDate, cost: Number(form.cost) || 0, condition: form.condition,
       location: form.location.trim(), shared: form.shared, status: "Available", allocatedTo: null,
       expectedReturn: null, photoName: form.photoName, allocationHistory: [], maintenanceHistory: [],
@@ -847,10 +897,25 @@ function RegisterAssetModal(props, ) {
 
 function AssetDetailDrawer({ asset, onClose, ...props }) {
   const { catName, holderName, setAssets, addLog, showToast } = props;
-  const transition = (newStatus) => {
-    setAssets((prev) => prev.map((a) => a.id === asset.id ? { ...a, status: newStatus } : a));
-    addLog(`Changed ${asset.tag} status to ${newStatus}`);
-    showToast(`${asset.tag} is now ${newStatus}.`);
+  const transition = async (newStatus) => {
+    try {
+      await assetsAPI.update(asset.id, {
+        name: asset.name,
+        condition: asset.condition,
+        location: asset.location,
+        shared: asset.shared,
+        status: newStatus,
+        allocated_to_type: asset.allocatedTo?.type || null,
+        allocated_to_id: asset.allocatedTo?.id || null,
+        expected_return: asset.expectedReturn || null,
+      });
+      setAssets((prev) => prev.map((a) => a.id === asset.id ? { ...a, status: newStatus } : a));
+      addLog(`Changed ${asset.tag} status to ${newStatus}`);
+      showToast(`${asset.tag} is now ${newStatus}.`);
+    } catch (error) {
+      console.error("Unable to update asset:", error);
+      showToast(error.message || "Unable to update the database.");
+    }
   };
   const canFlagLost = asset.status !== "Lost" && asset.status !== "Disposed";
   return (
@@ -1715,4 +1780,9 @@ function NotificationsScreen(props) {
       )}
     </div>
   );
+}
+
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(<AssetFlowApp />);
 }
