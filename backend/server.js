@@ -1,3 +1,4 @@
+import "./loadEnv.js";
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
@@ -13,6 +14,7 @@ import auditRoutes from "./routes/audits.js";
 import transferRoutes from "./routes/transfers.js";
 import notificationRoutes from "./routes/notifications.js";
 import stateRoutes from "./routes/state.js";
+import aiRoutes from "./routes/ai.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -36,6 +38,7 @@ app.use("/api/audits", auditRoutes);
 app.use("/api/transfers", transferRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/state", stateRoutes);
+app.use("/api/ai", aiRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

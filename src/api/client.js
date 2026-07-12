@@ -280,6 +280,18 @@ export const auditsAPI = {
   },
 };
 
+// AI Chat API
+export const aiAPI = {
+  chat: async (messages) => {
+    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ messages }),
+    });
+    return handleResponse(response);
+  },
+};
+
 // Notifications API
 export const notificationsAPI = {
   getAll: async () => {

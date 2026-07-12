@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import { assetsAPI, authAPI, stateAPI } from "./api/client";
+import { assetsAPI, authAPI, stateAPI, aiAPI } from "./api/client";
 import {
   LayoutDashboard, Building2, Boxes, ArrowRightLeft, CalendarClock, Wrench,
   ShieldCheck, BarChart3, Bell, LogOut, Plus, Search, X, Check, ChevronRight,
   AlertTriangle, Users, MapPin, Menu, Tag, Clock, Package, CheckCircle2,
-  Filter, Download, Camera
+  Filter, Download, Camera, Bot, Send, Sparkles, ChevronDown, Zap
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------- */
@@ -406,6 +406,16 @@ export default function AssetFlowApp() {
           <CheckCircle2 size={16} className="text-emerald-400" /> {toast}
         </div>
       )}
+
+      {/* AI Support Bot — always visible when logged in */}
+      <AIChatBot
+        assets={assets}
+        maintenance={maintenance}
+        bookings={bookings}
+        audits={audits}
+        transferRequests={transferRequests}
+        currentUser={currentUser}
+      />
     </div>
   );
 }
@@ -1779,6 +1789,384 @@ function NotificationsScreen(props) {
         </Card>
       )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/*  AI CHAT BOT — Powered by NVIDIA NIM                                    */
+/* ---------------------------------------------------------------------- */
+const QUICK_ACTIONS = [
+  { label: "📊 Asset Summary", prompt: "Give me a full summary of all assets — totals by status, value, and any urgent items." },
+  { label: "🔧 Maintenance Issues", prompt: "What are the current open maintenance issues? Highlight any high priority ones." },
+  { label: "⚠️ Assets at Risk", prompt: "Which assets are in poor condition or need urgent attention?" },
+  { label: "📈 Utilization Report", prompt: "How well are assets being utilized? What's idle vs allocated?" },
+  { label: "📅 Booking Overview", prompt: "Give me an overview of current and upcoming bookings. Any overdue ones?" },
+  { label: "🔍 Audit Status", prompt: "What is the current status of audits? Any open audits with unchecked items?" },
+];
+
+function AIChatBot({ assets, maintenance, bookings, audits, transferRequests, currentUser }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      content: `👋 Hi ${currentUser?.name?.split(" ")[0] || "there"}! I'm **AssetFlow AI**, powered by NVIDIA NIM.\n\nI can analyze your assets, maintenance requests, bookings, audits, and more in real time. Try a quick action below or ask me anything!`,
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      inputRef.current?.focus();
+    }
+  }, [open, messages]);
+
+  const sendMessage = async (text) => {
+    const userText = (text || input).trim();
+    if (!userText || loading) return;
+    setInput("");
+    setError(null);
+
+    const newMessages = [...messages, { role: "user", content: userText }];
+    setMessages(newMessages);
+    setLoading(true);
+
+    // Only send role+content to API (not system — that's built server-side)
+    const apiMessages = newMessages.map(({ role, content }) => ({ role, content }));
+
+    try {
+      const { reply } = await aiAPI.chat(apiMessages);
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    } catch (err) {
+      setError(err.message || "Failed to reach AI. Check NVIDIA_API_KEY in backend/.env");
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "⚠️ " + (err.message || "Could not connect to AI. Please check your NVIDIA API key configuration."),
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  // Render markdown-like text (bold **text**, newlines)
+  const renderContent = (text) => {
+    const lines = text.split("\n");
+    return lines.map((line, i) => {
+      const parts = line.split(/\*\*(.*?)\*\*/g);
+      return (
+        <span key={i}>
+          {parts.map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}
+          {i < lines.length - 1 && <br />}
+        </span>
+      );
+    });
+  };
+
+  return (
+    <>
+      {/* Floating bubble */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title="AssetFlow AI"
+        style={{
+          position: "fixed",
+          bottom: "24px",
+          right: "24px",
+          zIndex: 9999,
+          width: "56px",
+          height: "56px",
+          borderRadius: "50%",
+          background: "linear-gradient(135deg, #76b900 0%, #4a8a00 100%)",
+          border: "2px solid rgba(118,185,0,0.5)",
+          boxShadow: "0 0 0 0 rgba(118,185,0,0.4), 0 8px 32px rgba(0,0,0,0.5)",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          animation: open ? "none" : "nvidiaGlow 2.5s ease-in-out infinite",
+          transition: "transform 0.2s ease, box-shadow 0.2s ease",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.1)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+      >
+        {open
+          ? <ChevronDown size={24} color="#fff" />
+          : <Bot size={24} color="#fff" />
+        }
+      </button>
+
+      {/* Chat panel */}
+      {open && (
+        <div style={{
+          position: "fixed",
+          bottom: "92px",
+          right: "24px",
+          zIndex: 9998,
+          width: "min(420px, calc(100vw - 32px))",
+          height: "min(600px, calc(100vh - 120px))",
+          display: "flex",
+          flexDirection: "column",
+          borderRadius: "20px",
+          overflow: "hidden",
+          border: "1px solid rgba(118,185,0,0.25)",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(118,185,0,0.1) inset",
+          background: "rgba(10,14,20,0.97)",
+          backdropFilter: "blur(20px)",
+        }}>
+
+          {/* Header */}
+          <div style={{
+            padding: "14px 16px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: "linear-gradient(135deg, rgba(118,185,0,0.15) 0%, rgba(10,14,20,0) 60%)",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            flexShrink: 0,
+          }}>
+            <div style={{
+              width: "36px", height: "36px", borderRadius: "10px",
+              background: "linear-gradient(135deg, #76b900, #4a8a00)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 0 12px rgba(118,185,0,0.4)",
+              flexShrink: 0,
+            }}>
+              <Zap size={18} color="#fff" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, color: "#f1f5f9", fontSize: "14px", lineHeight: 1 }}>
+                AssetFlow AI
+              </div>
+              <div style={{ fontSize: "10px", color: "#76b900", fontFamily: "'JetBrains Mono', monospace", marginTop: "2px", fontWeight: 600, letterSpacing: "0.05em" }}>
+                ⚡ POWERED BY NVIDIA NIM
+              </div>
+            </div>
+            <div style={{
+              fontSize: "10px", color: "#64748b", background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.08)", borderRadius: "6px",
+              padding: "3px 8px", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.03em",
+            }}>
+              llama-3.1-70b
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              style={{ color: "#475569", background: "none", border: "none", cursor: "pointer", padding: "2px", display: "flex", alignItems: "center" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Messages area */}
+          <div style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            scrollbarWidth: "thin",
+            scrollbarColor: "rgba(118,185,0,0.2) transparent",
+          }}>
+            {messages.map((msg, i) => (
+              <div key={i} style={{
+                display: "flex",
+                flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                alignItems: "flex-start",
+                gap: "8px",
+              }}>
+                {msg.role === "assistant" && (
+                  <div style={{
+                    width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
+                    background: "linear-gradient(135deg, #76b900, #4a8a00)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Bot size={14} color="#fff" />
+                  </div>
+                )}
+                <div style={{
+                  maxWidth: "80%",
+                  padding: "10px 14px",
+                  borderRadius: msg.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                  background: msg.role === "user"
+                    ? "linear-gradient(135deg, #f97316, #ea580c)"
+                    : "rgba(255,255,255,0.05)",
+                  border: msg.role === "user"
+                    ? "1px solid rgba(249,115,22,0.3)"
+                    : "1px solid rgba(255,255,255,0.07)",
+                  fontSize: "13px",
+                  lineHeight: "1.55",
+                  color: msg.role === "user" ? "#fff" : "#cbd5e1",
+                  fontFamily: "'Inter', sans-serif",
+                  boxShadow: msg.role === "user"
+                    ? "0 4px 12px rgba(249,115,22,0.25)"
+                    : "none",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>
+                  {renderContent(msg.content)}
+                </div>
+              </div>
+            ))}
+
+            {/* Typing indicator */}
+            {loading && (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                <div style={{
+                  width: "28px", height: "28px", borderRadius: "8px", flexShrink: 0,
+                  background: "linear-gradient(135deg, #76b900, #4a8a00)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <Bot size={14} color="#fff" />
+                </div>
+                <div style={{
+                  padding: "12px 16px",
+                  borderRadius: "4px 16px 16px 16px",
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", gap: "6px",
+                }}>
+                  <span style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                    {[0, 1, 2].map((d) => (
+                      <span key={d} style={{
+                        width: "6px", height: "6px", borderRadius: "50%",
+                        background: "#76b900",
+                        animation: `typingBounce 1.2s ease-in-out ${d * 0.2}s infinite`,
+                        display: "inline-block",
+                      }} />
+                    ))}
+                  </span>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontFamily: "'JetBrains Mono', monospace" }}>
+                    Analyzing data…
+                  </span>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Quick actions */}
+          {messages.length <= 2 && !loading && (
+            <div style={{
+              padding: "8px 16px",
+              borderTop: "1px solid rgba(255,255,255,0.05)",
+              display: "flex", flexWrap: "wrap", gap: "6px",
+              flexShrink: 0,
+            }}>
+              {QUICK_ACTIONS.map((qa) => (
+                <button
+                  key={qa.label}
+                  onClick={() => sendMessage(qa.prompt)}
+                  style={{
+                    background: "rgba(118,185,0,0.08)",
+                    border: "1px solid rgba(118,185,0,0.2)",
+                    borderRadius: "20px",
+                    color: "#a3c45a",
+                    fontSize: "11px",
+                    padding: "5px 12px",
+                    cursor: "pointer",
+                    fontFamily: "'Inter', sans-serif",
+                    fontWeight: 500,
+                    transition: "all 0.15s",
+                    whiteSpace: "nowrap",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(118,185,0,0.18)";
+                    e.currentTarget.style.borderColor = "rgba(118,185,0,0.45)";
+                    e.currentTarget.style.color = "#76b900";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(118,185,0,0.08)";
+                    e.currentTarget.style.borderColor = "rgba(118,185,0,0.2)";
+                    e.currentTarget.style.color = "#a3c45a";
+                  }}
+                >
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input area */}
+          <div style={{
+            padding: "12px 16px 16px",
+            borderTop: "1px solid rgba(255,255,255,0.06)",
+            display: "flex",
+            gap: "8px",
+            alignItems: "flex-end",
+            background: "rgba(0,0,0,0.3)",
+            flexShrink: 0,
+          }}>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Ask about assets, maintenance, bookings…"
+              disabled={loading}
+              rows={1}
+              style={{
+                flex: 1,
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: "12px",
+                padding: "10px 14px",
+                color: "#f1f5f9",
+                fontSize: "13px",
+                fontFamily: "'Inter', sans-serif",
+                resize: "none",
+                outline: "none",
+                lineHeight: "1.4",
+                maxHeight: "96px",
+                overflowY: "auto",
+                transition: "border-color 0.15s",
+              }}
+              onFocus={(e) => { e.target.style.borderColor = "rgba(118,185,0,0.5)"; }}
+              onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }}
+            />
+            <button
+              onClick={() => sendMessage()}
+              disabled={loading || !input.trim()}
+              style={{
+                width: "40px", height: "40px", borderRadius: "12px", flexShrink: 0,
+                background: input.trim() && !loading
+                  ? "linear-gradient(135deg, #76b900, #4a8a00)"
+                  : "rgba(255,255,255,0.05)",
+                border: "1px solid " + (input.trim() && !loading ? "rgba(118,185,0,0.5)" : "rgba(255,255,255,0.08)"),
+                cursor: input.trim() && !loading ? "pointer" : "not-allowed",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.15s",
+                boxShadow: input.trim() && !loading ? "0 4px 12px rgba(118,185,0,0.3)" : "none",
+              }}
+            >
+              <Send size={16} color={input.trim() && !loading ? "#fff" : "#334155"} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Keyframe animations injected inline */}
+      <style>{`
+        @keyframes nvidiaGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(118,185,0,0.5), 0 8px 32px rgba(0,0,0,0.5); }
+          50% { box-shadow: 0 0 0 12px rgba(118,185,0,0), 0 8px 32px rgba(0,0,0,0.5); }
+        }
+        @keyframes typingBounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40% { transform: translateY(-5px); opacity: 1; }
+        }
+      `}</style>
+    </>
   );
 }
 
